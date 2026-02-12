@@ -2,9 +2,6 @@
 
 datas = [
     ('./res/excel_tool.icns', 'res'),
-    ('./config/service', 'config'),
-    ('./config/master_account', 'config'),
-    ('./config/from_account', 'config'),
 ]
 
 a = Analysis(
