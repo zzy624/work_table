@@ -189,7 +189,7 @@ builds: venv install icon
 	fi
 
 	# 清理并构建
-	@rm -rf build dist
+	@rm -rf build dist || true
 	@printf "$(BLUE)执行构建...$(NC)\n"
 	@if $(PYINSTALLER_VENV) --noconfirm main.spec; then \
 		printf "$(GREEN)✅ 构建成功!$(NC)\n"; \

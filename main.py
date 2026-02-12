@@ -495,7 +495,9 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
                 item = QListWidgetItem(key)
                 item.setFont(font)  # 应用到列表项
                 self.listWidget.addItem(item)
-
+            # 设置页宽度
+            self.listWidget.setMinimumWidth(self.listWidget.sizeHintForColumn(0) + 10)
+            self.label_8.setMinimumWidth(self.listWidget.sizeHintForColumn(0) + 10)
             # 默认第一页数据
             self.listWidget.setCurrentRow(0)
             self.set_table(self.W.data_dict[next(iter(self.W.data_dict))].values)
