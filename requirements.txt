@@ -1,0 +1,10 @@
+setuptools==68.0.0
+wheel>=0.38.0
+pip>=23.0.0
+
+PyQt5==5.15.11
+pyinstaller==5.13.0
+pandas==2.0.3
+numpy==1.24.3  # 兼容 Python 3.11 及以下
+openpyxl==3.1.2
+xlsxwriter==3.1.2

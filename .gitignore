@@ -1,0 +1,35 @@
+go_src
+
+# 构建产物
+/build/
+/dist/
+/dist-intel/
+/build-intel/
+/__pycache__/
+/*.spec.backup
+*.zip
+*.pyo
+*.pyc
+
+# 虚拟环境
+/venv/
+/venv-intel/
+/.venv/
+
+# 敏感信息
+/config/config.ini
+.env
+.env.local
+*.key
+secrets/
+/config
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+*.dmg

@@ -1,0 +1,413 @@
+name: Build and Release (ARM64 + Intel + Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如: 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  APP_NAME_CN: 表格工具
+  APP_NAME_EN: excel_tool
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build-arm64:
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      arm64_size: ${{ steps.get_size.outputs.arm64_size }}
+      macos_filename: ${{ steps.package.outputs.asset_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/Library/Caches/pip
+          key: ${{ runner.os }}-arm64-pyqt5-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -c "from PyQt5 import QtCore; print(f'PyQt5: {QtCore.PYQT_VERSION_STR}')"
+
+      - name: Build ARM64
+        run: |
+          sed -i '' "s/target_arch=None/target_arch='arm64'/" main.spec
+          sed -i '' "s|entitlements_file=None|entitlements_file='entitlements.plist'|" main.spec
+          
+          pyinstaller --noconfirm main.spec
+          file "dist/${{ env.APP_NAME_CN }}.app/Contents/MacOS/main"
+
+      - name: Package ARM64 (DMG)
+        id: package
+        run: |
+          cd dist
+          
+          brew install create-dmg
+          
+          DMG_NAME="${{ env.APP_NAME_EN }}_AppleSilicon.dmg"
+          VOL_NAME="${{ env.APP_NAME_CN }} Apple Silicon"
+          
+          if create-dmg \
+            --volname "$VOL_NAME" \
+            --window-pos 200 120 \
+            --window-size 800 500 \
+            --icon-size 100 \
+            --app-drop-link 550 200 \
+            --hide-extension "${{ env.APP_NAME_CN }}.app" \
+            --format UDZO \
+            "$DMG_NAME" \
+            "${{ env.APP_NAME_CN }}.app" 2>/dev/null; then
+          
+            echo "dmg_created=true" >> $GITHUB_ENV
+            mv "$DMG_NAME" "../$DMG_NAME"
+            cd ..
+            FILE_SIZE=$(du -h "$DMG_NAME" | cut -f1)
+            echo "arm64_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+            echo "asset_path=$DMG_NAME" >> $GITHUB_OUTPUT
+            echo "asset_name=$DMG_NAME" >> $GITHUB_OUTPUT
+          
+          else
+            echo "dmg_created=false" >> $GITHUB_ENV
+            ZIP_NAME="${{ env.APP_NAME_EN }}_AppleSilicon.zip"
+            ditto -c -k --keepParent "${{ env.APP_NAME_CN }}.app" "../$ZIP_NAME"
+            cd ..
+            FILE_SIZE=$(du -h "$ZIP_NAME" | cut -f1)
+            echo "arm64_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+            echo "asset_path=$ZIP_NAME" >> $GITHUB_OUTPUT
+            echo "asset_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get Size for Output
+        id: get_size
+        run: |
+          if [ -f "${{ steps.package.outputs.asset_path }}" ]; then
+            FILE_SIZE=$(du -h "${{ steps.package.outputs.asset_path }}" | cut -f1)
+            echo "arm64_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+          else
+            echo "arm64_size=未知" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-build
+          path: |
+            ${{ steps.package.outputs.asset_path }}
+          retention-days: 7
+
+      - name: Print local Intel build instructions
+        run: |
+          echo "::notice title=Intel Mac本地构建::运行: make build-intel 或 ./build-intel-local.sh ${{ steps.get_version.outputs.version }}"
+
+  build-windows:
+    runs-on: windows-latest
+    needs: build-arm64
+    outputs:  # 修改 outputs
+      windows_size: ${{ steps.package_windows.outputs.windows_size }}
+      windows_filename: ${{ steps.package_windows.outputs.windows_filename }}
+    strategy:
+      matrix:
+        architecture: [x64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: ${{ matrix.architecture }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Prepare Windows Resources
+        run: |
+          mkdir -p build/windows
+          
+          if (Test-Path "res/excel_tool.ico") {
+            echo "找到Windows图标: res/excel_tool.ico"
+            Copy-Item "res/excel_tool.ico" "build/windows/app_icon.ico"
+            echo "图标已复制到 build/windows/app_icon.ico"
+          } else {
+            echo "未找到 res/excel_tool.ico，正在搜索其他图标文件..."
+            Get-ChildItem "res/*.ico" -ErrorAction SilentlyContinue | ForEach-Object {
+              echo "找到ICO文件: $_"
+              Copy-Item $_ "build/windows/app_icon.ico"
+              echo "已复制 $($_.Name) 作为应用图标"
+            }
+          
+            if (-Not (Test-Path "build/windows/app_icon.ico")) {
+              echo "未找到ICO图标文件，Windows应用将使用默认图标"
+              echo "建议在 res/ 目录下创建 excel_tool.ico 文件" > build/windows/icon_warning.txt
+            }
+          }
+
+      - name: Build Windows Executable
+        run: |
+          echo "开始构建Windows可执行文件..."
+          
+          if (Test-Path "windows.spec") {
+            echo "使用现有的windows.spec文件"
+          } else {
+            Write-Error "windows.spec文件不存在"
+            exit 1
+          }
+          
+          pyinstaller --noconfirm windows.spec
+          
+          if (Test-Path "dist\${{ env.APP_NAME_EN }}.exe") {
+            echo "Windows构建成功"
+            $file = Get-Item "dist\${{ env.APP_NAME_EN }}.exe"
+            $fileSize = [math]::Round($file.Length / 1MB, 2)
+            echo "可执行文件大小: $fileSize MB"
+            echo "exe_size=$fileSize" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "Windows构建失败 - 未找到可执行文件"
+            Get-ChildItem "dist" -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+      - name: Add Windows Configuration Files
+        run: |
+          if (Test-Path "dist\${{ env.APP_NAME_EN }}.exe") {
+            if (-Not (Test-Path "dist\config")) {
+              New-Item -ItemType Directory -Path "dist\config" -Force
+              echo "创建config目录"
+            }
+
+            if (Test-Path "build/windows/app_icon.ico") {
+              Copy-Item "build/windows/app_icon.ico" "dist\app_icon.ico"
+              echo "复制图标到dist目录"
+            }
+
+            # 创建空白配置文件（无后缀名）
+            echo "创建空白配置文件..."
+
+            # 创建 service 空白文件
+            $servicePath = "dist\config\service"
+            if (-Not (Test-Path $servicePath)) {
+              "" | Out-File $servicePath -Encoding UTF8
+              echo "创建空白文件: service"
+            } else {
+              echo "文件已存在: service"
+            }
+
+            # 创建 from_account 空白文件
+            $fromAccountPath = "dist\config\from_account"
+            if (-Not (Test-Path $fromAccountPath)) {
+              "" | Out-File $fromAccountPath -Encoding UTF8
+              echo "创建空白文件: from_account"
+            } else {
+              echo "文件已存在: from_account"
+            }
+
+            # 创建 master_account 空白文件
+            $masterAccountPath = "dist\config\master_account"
+            if (-Not (Test-Path $masterAccountPath)) {
+              "" | Out-File $masterAccountPath -Encoding UTF8
+              echo "创建空白文件: master_account"
+            } else {
+              echo "文件已存在: master_account"
+            }
+
+            echo "空白配置文件创建完成"
+
+            # 显示创建的文件列表
+            echo "创建的配置文件:"
+            Get-ChildItem "dist\config" | ForEach-Object {
+              echo "  - $($_.Name) ($($_.Length) bytes)"
+            }
+          }
+
+      - name: Package Windows
+        id: package_windows
+        run: |
+          cd dist
+          
+          Remove-Item -Path "*.spec" -ErrorAction SilentlyContinue
+          Remove-Item -Path "build" -Recurse -ErrorAction SilentlyContinue -Force
+          
+          $ZIP_NAME = "${{ env.APP_NAME_EN }}_Windows_x64.zip"
+          
+          echo "要打包的文件:"
+          Get-ChildItem -Recurse | Select-Object Name, Length | Format-Table
+          
+          echo "正在创建ZIP包: $ZIP_NAME"
+          Compress-Archive -Path * -DestinationPath "..\$ZIP_NAME" -Force
+          
+          $zipFile = Get-Item "..\$ZIP_NAME"
+          $fileSize = [math]::Round($zipFile.Length / 1MB, 2)
+          
+          # 直接输出所有需要的值
+          echo "asset_path=$ZIP_NAME" >> $env:GITHUB_OUTPUT
+          echo "asset_name=$ZIP_NAME" >> $env:GITHUB_OUTPUT
+          echo "windows_filename=$ZIP_NAME" >> $env:GITHUB_OUTPUT
+          echo "windows_size=$fileSize MB" >> $env:GITHUB_OUTPUT
+          
+          echo "Windows包大小: $fileSize MB"
+          echo "ZIP文件详情:"
+          Get-Item "..\$ZIP_NAME" | Format-List Name, Length, LastWriteTime
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            ${{ steps.package_windows.outputs.asset_path }}
+          retention-days: 7
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [build-arm64, build-windows]
+    if: success()
+
+    steps:
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64-build
+          path: ./artifacts/macos
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: ./artifacts/windows
+
+      - name: Prepare Release Files
+        run: |
+          echo "发布文件列表:"
+          find ./artifacts -type f | sort
+          
+          if [ ! -f "./artifacts/macos/"* ] && [ ! -f "./artifacts/windows/"* ]; then
+            echo "错误: 没有找到可发布的文件"
+            exit 1
+          fi
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.build-arm64.outputs.version }}
+          name: ${{ env.APP_NAME_CN }} ${{ needs.build-arm64.outputs.version }}
+          body: |
+            ## 🚀 ${{ env.APP_NAME_CN }} ${{ needs.build-arm64.outputs.version }}
+            
+            ### 📦 构建状态
+            | 平台 | 架构 | 状态 | 文件大小 |
+            |------|------|------|----------|
+            | **macOS** | Apple Silicon (ARM64) | ✅ 已完成 | ${{ needs.build-arm64.outputs.arm64_size || '未知' }} |
+            | **Windows** | x64 (64位) | ✅ 已完成 | ${{ needs.build-windows.outputs.windows_size || '未知' }} |
+            | **macOS** | Intel (x86_64) | ⏳ 等待本地构建 | - |
+            
+            ### 📋 系统要求
+            - **macOS**: 11.0 (Big Sur) 或更高版本
+            - **Windows**: Windows 10/11 64位，至少4GB内存
+            - **通用**: 至少500MB可用磁盘空间
+            
+            ### 🔧 依赖版本
+            - PyQt5: 5.15.11
+            - pandas: 2.0.3
+            - numpy: 1.24.3
+            - xlsxwriter: 3.1.2
+            - openpyxl: 3.1.2
+            
+            ### 📥 安装说明
+            
+            #### 🍎 macOS (Apple Silicon - M1/M2/M3/M4)
+            1. 下载 **${{ needs.build-arm64.outputs.macos_filename }}**
+            2. 双击打开文件
+            3. 将 **${{ env.APP_NAME_CN }}.app** 拖到 **应用程序** 文件夹
+            4. 首次运行时，如果提示"无法打开"，请到：
+               **系统设置** → **隐私与安全** → 点击"仍要打开"
+            
+            #### 🍎 macOS (Intel)
+            **注意**: Intel版本需要本地构建，方法如下：
+            ```bash
+            # 在Intel Mac上运行
+            make build-intel
+            # 或
+            ./build-intel-local.sh ${{ needs.build-arm64.outputs.version }}
+            ```
+            
+            #### 🪟 Windows 10/11 (64位)
+            1. 下载 **${{ needs.build-windows.outputs.windows_filename }}**
+            2. 解压到任意文件夹（建议不要在C盘根目录）
+            3. 运行 **${{ env.APP_NAME_EN }}.exe**
+            4. 如果Windows Defender提示：
+               - 点击"更多信息"
+               - 点击"仍要运行"
+            
+            ### ⚠️ 注意事项
+            - 首次启动可能需要较长时间（加载依赖库）
+            - 确保对安装目录有读写权限
+            - 建议关闭杀毒软件实时监控（如果误报）
+            - 配置文件保存在 `config/` 目录中（包含 service, from_account, master_account 三个配置文件）
+            
+            ### 🔗 下载链接
+            **macOS Apple Silicon**: [${{ needs.build-arm64.outputs.macos_filename }}](https://github.com/${{ github.repository }}/releases/download/${{ needs.build-arm64.outputs.version }}/${{ needs.build-arm64.outputs.macos_filename }})
+            
+            **Intel Mac**: ⏳ 请等待 Intel 版本上传...
+            
+            **Windows 64位**: [${{ needs.build-windows.outputs.windows_filename }}](https://github.com/${{ github.repository }}/releases/download/${{ needs.build-arm64.outputs.version }}/${{ needs.build-windows.outputs.windows_filename }})
+            
+            ### 🛠️ Intel Mac本地构建指南
+            （此部分内容在本地构建后会被替换）
+            
+            ### 🐛 已知问题
+            - 部分杀毒软件可能误报，请添加到信任列表
+            - Windows版本首次启动较慢
+            - macOS可能需要手动授权
+            - Intel Mac需要本地构建
+            
+            ### 📞 技术支持
+            遇到问题？请 [提交Issue](https://github.com/${{ github.repository }}/issues)
+            
+            ### 📅 更新日志
+            **${{ needs.build-arm64.outputs.version }}**
+            - 新增 Windows 平台支持
+            - Windows版本包含默认配置文件（service, from_account, master_account）
+          draft: true
+          prerelease: false
+          files: |
+            artifacts/macos/*
+            artifacts/windows/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Release
+        run: |
+          echo "发布创建完成"
+          echo "版本号: ${{ needs.build-arm64.outputs.version }}"
+          echo "macOS 文件大小: ${{ needs.build-arm64.outputs.arm64_size }}"
+          echo "Windows 文件大小: ${{ needs.build-windows.outputs.windows_size }}"
+          echo "发布日期: $(date)"
