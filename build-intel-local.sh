@@ -53,7 +53,7 @@ fi
 
 # 清理
 echo "🧹 清理旧构建..."
-rm -rf build dist build-intel dist-intel venv-intel
+rm -rf build dist build-intel dist-intel venv-intel || true
 mkdir -p dist-intel
 
 # 检测架构
@@ -170,6 +170,7 @@ if create-dmg \
   --app-drop-link 550 200 \
   --hide-extension "${APP_NAME_CN}.app" \
   --format UDZO \
+  --skip-jenkins \
   "$DMG_NAME" \
   "${APP_NAME_CN}.app" 2>/dev/null; then
 

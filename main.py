@@ -165,18 +165,19 @@ class UIConfigDialog(QDialog, Ui_Dialog):
         self.parent_window = parent
 
         self.textEdit.setPlaceholderText("支持格式示例：\n"
-                                                    "• 服务器1 192.168.1.1 (空格)\n"
-                                                    "• 服务器1\t192.168.1.1 (Tab)\n"
-                                                    "• 服务器1,192.168.1.1 (逗号)\n"
-                                                    "• 服务器1:192.168.1.1 (冒号)\n")
+                                         "• 服务器1 192.168.1.1 (空格)\n"
+                                         "• 服务器1\t192.168.1.1 (Tab)\n"
+                                         "• 服务器1,192.168.1.1 (逗号)\n"
+                                         "• 服务器1:192.168.1.1 (冒号)\n")
 
     @pyqtSlot()
     def on_pushButton_save_config_clicked(self):
-        with open(self.application_path + f'/config/service', 'w') as file:
+        # 保存时统一使用UTF-8编码
+        with open(self.application_path + f'/config/service', 'w', encoding='utf-8') as file:
             file.write(self.textEdit.toPlainText())
-        with open(self.application_path + f'/config/master_account', 'w') as file:
+        with open(self.application_path + f'/config/master_account', 'w', encoding='utf-8') as file:
             file.write(self.textEdit_2.toPlainText())
-        with open(self.application_path + f'/config/from_account', 'w') as file:
+        with open(self.application_path + f'/config/from_account', 'w', encoding='utf-8') as file:
             file.write(self.textEdit_3.toPlainText())
         self.parent_window.load_combo_data()
         QMessageBox.information(self, "提示", "配置已更新")
@@ -220,6 +221,34 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         # 设置statusBar
         self.statusBar().showMessage('版本：v1.0.0')
 
+    # ==================== 文件编码处理 ====================
+    def read_file_with_encoding(self, file_path):
+        """智能读取文件，自动检测编码"""
+        if not os.path.exists(file_path):
+            return ""
+
+        # 按优先级尝试不同编码
+        encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin-1']
+
+        for enc in encodings:
+            try:
+                with open(file_path, 'r', encoding=enc) as f:
+                    return f.read()
+            except UnicodeDecodeError:
+                continue
+            except Exception:
+                continue
+
+        # 如果都失败，使用二进制模式并忽略错误
+        with open(file_path, 'rb') as f:
+            return f.read().decode('utf-8', errors='ignore')
+
+    def write_file_with_encoding(self, file_path, content):
+        """写入文件，统一使用UTF-8"""
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    # ==================== 下拉框设置 ====================
     def setup_checkable_combobox(self):
         """设置可多选的下拉框"""
         # 创建从账号多选下拉框
@@ -247,8 +276,8 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         self.check_combo_from.setMinimumSize(from_size)
         self.check_combo_master.setMinimumSize(master_size)
         self.check_combo_from.setFocus()
+
         # 添加新的多选下拉框到布局（保持原有顺序）
-        # 找到 label_3 和 label_4 的位置
         for i in range(self.horizontalLayout_2.count()):
             widget = self.horizontalLayout_2.itemAt(i).widget()
             if widget == self.label_3:
@@ -268,8 +297,9 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         self.comboBox.hide()
         self.comboBox_2.hide()
 
-    # 打开配置文件对话框
+    # ==================== 配置文件操作 ====================
     def on_action_menu_clicked(self, index):
+        """打开配置文件对话框"""
         cw = UIConfigDialog(self)
         cw.tabWidget.setCurrentIndex(index)
         try:
@@ -278,43 +308,33 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
             if not os.path.exists(config_dir):
                 os.makedirs(config_dir)
 
-            # 处理 service 文件
+            # 处理 service 文件 - 使用智能读取
             service_file = config_dir + '/service'
             if os.path.exists(service_file):
-                with open(service_file, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    cw.textEdit.setText(content)
+                content = self.read_file_with_encoding(service_file)
+                cw.textEdit.setText(content)
             else:
-                # 创建空文件并设置默认提示
-                with open(service_file, 'w', encoding='utf-8') as file:
-                    file.write('')
+                self.write_file_with_encoding(service_file, '')
 
             # 处理 master_account 文件
             master_file = config_dir + '/master_account'
             if os.path.exists(master_file):
-                with open(master_file, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    cw.textEdit_2.setText(content)
+                content = self.read_file_with_encoding(master_file)
+                cw.textEdit_2.setText(content)
             else:
-                # 创建空文件并设置默认提示
-                with open(master_file, 'w', encoding='utf-8') as file:
-                    file.write('')
+                self.write_file_with_encoding(master_file, '')
 
             # 处理 from_account 文件
             from_file = config_dir + '/from_account'
             if os.path.exists(from_file):
-                with open(from_file, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    cw.textEdit_3.setText(content)
+                content = self.read_file_with_encoding(from_file)
+                cw.textEdit_3.setText(content)
             else:
-                # 创建空文件并设置默认提示
-                with open(from_file, 'w', encoding='utf-8') as file:
-                    file.write('')
+                self.write_file_with_encoding(from_file, '')
 
         except Exception as e:
             QMessageBox.warning(self, "警告", f"配置文件处理失败：{str(e)}")
 
-        # 执行对话框的模态运行，阻止用户与应用程序其他部分的交互
         cw.exec_()
 
     def setup_connections(self):
@@ -331,62 +351,55 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
 
     def on_from_accounts_changed(self, selected_items):
         """从账号选中状态改变"""
-
+        pass
 
     def on_master_accounts_changed(self, selected_items):
         """主账号选中状态改变"""
+        pass
 
+    # ==================== 数据加载 ====================
     def load_combo_data(self):
         """加载下拉框数据"""
         # 确保 config 目录存在
         config_dir = os.path.join(self.application_path, 'config')
         if not os.path.exists(config_dir):
             os.makedirs(config_dir)
-            print(f"创建配置目录: {config_dir}")
 
         # 加载从账号到 check_combo_from
         from_account_file = os.path.join(config_dir, 'from_account')
         if os.path.exists(from_account_file):
             try:
-                with open(from_account_file, 'r', encoding='utf-8') as f:
-                    accounts = [line.strip() for line in f if line.strip()]
-                    self.check_combo_from.clear()
+                content = self.read_file_with_encoding(from_account_file)
+                accounts = [line.strip() for line in content.splitlines() if line.strip()]
+                self.check_combo_from.clear()
+                if accounts:
                     self.check_combo_from.addItems(accounts)
-                    # 默认全选
-                    # self.check_combo_from.selectAll()
-                    # print(f"加载从账号: {len(accounts)} 个")
             except Exception as e:
                 print(f"读取从账号配置失败: {e}")
                 self.check_combo_from.clear()
-                self.check_combo_from.addItems([])
-                self.check_combo_from.selectAll()
         else:
-            # 文件不存在，创建默认配置
+            # 文件不存在，创建空文件
+            self.write_file_with_encoding(from_account_file, '')
             self.check_combo_from.clear()
-            self.check_combo_from.selectAll()
-            print(f"创建默认从账号配置: {from_account_file}")
 
         # 加载主账号到 check_combo_master
         master_account_file = os.path.join(config_dir, 'master_account')
         if os.path.exists(master_account_file):
             try:
-                with open(master_account_file, 'r', encoding='utf-8') as f:
-                    accounts = [line.strip() for line in f if line.strip()]
-                    self.check_combo_master.clear()
+                content = self.read_file_with_encoding(master_account_file)
+                accounts = [line.strip() for line in content.splitlines() if line.strip()]
+                self.check_combo_master.clear()
+                if accounts:
                     self.check_combo_master.addItems(accounts)
                     # 默认全选
                     self.check_combo_master.selectAll()
-                    # print(f"加载主账号: {len(accounts)} 个")
             except Exception as e:
                 print(f"读取主账号配置失败: {e}")
                 self.check_combo_master.clear()
-                self.check_combo_master.addItems([])
-                self.check_combo_master.selectAll()
         else:
-            # 文件不存在，创建默认配置
+            # 文件不存在，创建空文件
+            self.write_file_with_encoding(master_account_file, '')
             self.check_combo_master.clear()
-            self.check_combo_master.selectAll()
-            print(f"创建默认主账号配置: {master_account_file}")
 
     def get_selected_from_accounts(self):
         """获取选中的从账号"""
@@ -398,8 +411,10 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
 
     def on_selection_changed(self):
         """选择状态改变时触发（单选/多选都会触发）"""
-        self.set_table(self.W.data_dict[self.listWidget.currentItem().text()].values)
+        if self.listWidget.currentItem():
+            self.set_table(self.W.data_dict[self.listWidget.currentItem().text()].values)
 
+    # ==================== 数据生成 ====================
     @pyqtSlot()
     def on_pushButton_generate_data_clicked(self):
         start_date = datetime.strptime(self.dateEdit.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
@@ -424,86 +439,99 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
             return
 
         config_dir = os.path.join(self.application_path, 'config')
-        from_account_file = os.path.join(config_dir, 'service')
-        if os.path.exists(from_account_file):
+        service_file = os.path.join(config_dir, 'service')
+
+        if os.path.exists(service_file):
             try:
-                with open(from_account_file, 'r', encoding='utf-8') as f:
-                    resource_ip_list = []
-                    for line in f:
-                        line = line.strip()
-                        if not line or line.startswith('#'):
-                            continue
+                content = self.read_file_with_encoding(service_file)
+                resource_ip_list = []
 
-                        # 支持多种分隔符：空格、Tab、逗号、冒号、竖线、分号
-                        for sep in ['\t', ' ', ',', ':', '|', ';']:
-                            if sep in line:
-                                parts = line.split(sep)
-                                parts = [p.strip() for p in parts if p.strip()]
-                                if len(parts) >= 2:
-                                    resource_ip_list.append(f"{parts[0]} {parts[1]}")
-                                    break
-                        else:
-                            # 没有找到分隔符，整行作为单个项处理（IP或服务器名）
-                            if line:
-                                resource_ip_list.append(line)
+                for line in content.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
 
-                    if len(resource_ip_list) == 0:
-                        reply = QMessageBox.warning(self, "提示",
-                                                    "服务配置信息不存在，请先配置服务器",
-                                                    QMessageBox.Ok | QMessageBox.Cancel)
-                        # 判断用户点击了哪个按钮
-                        if reply == QMessageBox.Ok:
-                            self.on_action_menu_clicked(0)
-                        elif reply == QMessageBox.Cancel:
-                            pass
-                        return
+                    # 支持多种分隔符：空格、Tab、逗号、冒号、竖线、分号
+                    for sep in ['\t', ' ', ',', ':', '|', ';']:
+                        if sep in line:
+                            parts = line.split(sep)
+                            parts = [p.strip() for p in parts if p.strip()]
+                            if len(parts) >= 2:
+                                resource_ip_list.append(f"{parts[0]} {parts[1]}")
+                                break
+                    else:
+                        # 没有找到分隔符，整行作为单个项处理（IP或服务器名）
+                        if line:
+                            resource_ip_list.append(line)
+
+                if len(resource_ip_list) == 0:
+                    reply = QMessageBox.warning(self, "提示",
+                                                "服务配置信息不存在，请先配置服务器",
+                                                QMessageBox.Ok | QMessageBox.Cancel)
+                    if reply == QMessageBox.Ok:
+                        self.on_action_menu_clicked(0)
+                    return
 
             except Exception as e:
                 QMessageBox.warning(self, "提示",
-                                f"服务配置加载失败\n\n"
-                                f"支持格式示例：\n"
-                                f"• 服务器1 192.168.1.1 (空格)\n"
-                                f"• 服务器1\t192.168.1.1 (Tab)\n"
-                                f"• 服务器1,192.168.1.1 (逗号)\n"
-                                f"• 服务器1:192.168.1.1 (冒号)\n"
-                                f"错误信息: {str(e)}")
+                                    f"服务配置加载失败\n\n"
+                                    f"支持格式示例：\n"
+                                    f"• 服务器1 192.168.1.1 (空格)\n"
+                                    f"• 服务器1\t192.168.1.1 (Tab)\n"
+                                    f"• 服务器1,192.168.1.1 (逗号)\n"
+                                    f"• 服务器1:192.168.1.1 (冒号)\n"
+                                    f"错误信息: {str(e)}")
+                return
+        else:
+            reply = QMessageBox.warning(self, "提示",
+                                        "服务配置文件不存在，请先配置服务器",
+                                        QMessageBox.Ok | QMessageBox.Cancel)
+            if reply == QMessageBox.Ok:
+                self.on_action_menu_clicked(0)
+            return
 
-            dialog = QDialog(self)
-            dialog.setWindowTitle("请稍候")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("请稍候")
+        dialog.setLayout(QVBoxLayout())
+        dialog.layout().addWidget(QLabel("加载中...", alignment=Qt.AlignCenter))
+        dialog.setFixedSize(140, 60)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.show()
 
-            # 正确的链式调用方式
-            dialog.setLayout(QVBoxLayout())
-            dialog.layout().addWidget(QLabel("加载中...", alignment=Qt.AlignCenter))
+        self.W.generate_timesheet_data(
+            start_date,
+            end_date,
+            resource_ip_list,
+            from_account_list,
+            master_account_list
+        )
 
-            dialog.setFixedSize(140, 60)
-            dialog.setWindowModality(Qt.WindowModal)
-            dialog.show()
-            self.W.generate_timesheet_data(
-                start_date,
-                end_date,
-                resource_ip_list,
-                from_account_list,
-                master_account_list
-            )
+        # 获取表头
+        self.header = self.W.header
 
-            # 获取表头
-            self.header = self.W.header
-            self.listWidget.clear()
-            for key, value in self.W.data_dict.items():
-                font = QFont()
-                font.setPointSize(14)  # 设置字体大小为12
-                item = QListWidgetItem(key)
-                item.setFont(font)  # 应用到列表项
-                self.listWidget.addItem(item)
-            # 设置页宽度
-            self.listWidget.setMinimumWidth(self.listWidget.sizeHintForColumn(0) + 10)
-            self.label_8.setMinimumWidth(self.listWidget.sizeHintForColumn(0) + 10)
-            # 默认第一页数据
+        # 更新列表
+        self.listWidget.clear()
+        for key, value in self.W.data_dict.items():
+            font = QFont()
+            font.setPointSize(14)
+            item = QListWidgetItem(key)
+            item.setFont(font)
+            self.listWidget.addItem(item)
+
+        # 设置列表宽度
+        if self.listWidget.count() > 0:
+            max_width = self.listWidget.sizeHintForColumn(0)
+            self.listWidget.setMinimumWidth(max_width + 30)
+            self.label_8.setMinimumWidth(max_width + 30)
+
+        # 默认第一页数据
+        if self.W.data_dict:
             self.listWidget.setCurrentRow(0)
             self.set_table(self.W.data_dict[next(iter(self.W.data_dict))].values)
 
-            dialog.close()
+        dialog.close()
 
+    # ==================== 表格操作 ====================
     def set_table(self, data_list):
         headers = self.setup_table_from_header(self.header)
         self.populate_data_rows(headers, data_list)
@@ -519,7 +547,7 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         for item in header_row.items:
             headers.append({
                 'text': item.text,
-                'original_text': item.text,  # 保存原始文本
+                'original_text': item.text,
                 'display_text': self.clean_header_text(item.text),
                 'row_span': item.row_span,
                 'col_span': item.col_span,
@@ -548,7 +576,7 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         # 7. 调整列宽
         self.tableWidget.resizeColumnsToContents()
 
-        # 8. 可选：设置交替行颜色
+        # 8. 设置交替行颜色
         self.tableWidget.setAlternatingRowColors(True)
 
         # 9. 设置选择行为
@@ -559,45 +587,34 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
 
     def clean_header_text(self, text):
         """清理表头文本"""
-        # 去掉换行符，用空格代替
         cleaned = text.replace('\n', ' ')
-
-        # 可选：限制长度
         if len(cleaned) > 20:
             cleaned = cleaned[:20] + "..."
-
         return cleaned
 
     def populate_data_rows(self, headers, data_list):
         """填充数据行 - 二维数组版本"""
-        # 设置表格不可编辑
         self.tableWidget.setEditTriggers(self.tableWidget.NoEditTriggers)
-        # 设置行数
         row_count = len(data_list)
         self.tableWidget.setRowCount(row_count)
 
-        # 设置列数（如果还没设置）
         if self.tableWidget.columnCount() == 0:
             self.tableWidget.setColumnCount(len(headers))
 
-        # 直接按行列填充
         for row, row_data in enumerate(data_list):
             for col, cell_value in enumerate(row_data):
-                if col < self.tableWidget.columnCount():  # 防止索引越界
+                if col < self.tableWidget.columnCount():
                     item = QTableWidgetItem(str(cell_value))
 
-                    # 根据数据类型设置对齐方式
                     if isinstance(cell_value, (int, float)):
                         item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     elif isinstance(cell_value, str):
-                        # 字符串左对齐
                         item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     else:
                         item.setTextAlignment(Qt.AlignCenter)
 
                     self.tableWidget.setItem(row, col, item)
 
-        # 调整列宽适应内容
         self.tableWidget.resizeColumnsToContents()
 
     def apply_header_item_style(self, header_item, style):
@@ -606,11 +623,10 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         font = QFont()
         font.setFamily(font_config.name)
         font.setPointSize(font_config.size)
-        font.setBold(True)  # 表头通常加粗
+        font.setBold(True)
 
         header_item.setFont(font)
 
-        # 设置文本颜色
         if font_config.color:
             try:
                 color = QColor(font_config.color)
@@ -618,7 +634,6 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
             except:
                 pass
 
-        # 设置背景色
         fill_config = style.fill
         if fill_config.color != '#ffffff':
             try:
@@ -627,47 +642,39 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
             except:
                 pass
 
+    # ==================== 导出功能 ====================
     @pyqtSlot()
     def on_exportButton_clicked(self):
         if self.tableWidget.rowCount() == 0:
             QMessageBox.warning(self, "提示", "请先生成数据！")
             return
-        # 1. 获取表名
-        table_name = "数据表"  # 替换为实际的表名获取逻辑
 
-        # 2. 生成默认文件名
+        table_name = "数据表"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_name = f"{table_name}_{timestamp}.xlsx"
         default_path = os.path.join(os.path.expanduser("~/Downloads"), default_name)
 
-        # 3. 打开保存对话框，用户可以修改文件名
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "导出文件",
-            default_path,  # 默认文件名
+            default_path,
             "Excel文件 (*.xlsx);;CSV文件 (*.csv);;所有文件 (*.*)"
         )
 
-        # 4. 执行导出
         if file_path:
             try:
-                # 根据扩展名选择导出方式
                 if file_path.endswith('.xlsx'):
                     self.export(file_path)
                 elif file_path.endswith('.csv'):
                     self.export(file_path)
                 else:
-                    # 默认导出为Excel
                     if not file_path.endswith('.xlsx'):
                         file_path += '.xlsx'
                     self.export(file_path)
-                return
-
             except Exception as e:
                 QMessageBox.critical(self, "导出失败", f"错误: {str(e)}")
 
     def export(self, file_path):
-        # 创建进度对话框
         progress_dialog = QProgressDialog("正在导出...", "取消", 0, 100, self)
         progress_dialog.setWindowTitle("导出进度")
         progress_dialog.setWindowModality(Qt.WindowModal)
@@ -675,38 +682,28 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
         progress_dialog.show()
         QApplication.processEvents()
 
-        # 跟踪取消状态
         is_cancelled = False
 
         def progress_callback(progress: int, status: str):
             nonlocal is_cancelled
-
-            # 检查是否取消
             if progress_dialog.wasCanceled():
                 is_cancelled = True
-                return False  # 取消导出
-
-            # 更新进度
+                return False
             progress_dialog.setValue(progress)
-            # progress_dialog.setLabelText(f"{progress}%")
             QApplication.processEvents()
-
             return True
 
         try:
-            # 执行导出
             self.W.export(file_path, progress_callback=progress_callback)
 
-            # 根据结果显示不同消息
             if is_cancelled:
                 QMessageBox.information(self, "导出取消", "导出操作已被用户取消")
             else:
                 QMessageBox.information(self, "导出成功", f"文件已保存到:\n{file_path}")
 
         except Exception as e:
-            if not is_cancelled:  # 如果不是用户取消的错误
+            if not is_cancelled:
                 QMessageBox.critical(self, "错误", str(e))
-
         finally:
             progress_dialog.close()
 
@@ -714,23 +711,15 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
 def get_application_path():
     """获取应用程序路径 - 跨平台兼容版本"""
     if getattr(sys, 'frozen', False):
-        # 如果是打包后的程序
         if hasattr(sys, '_MEIPASS'):
-            # Windows 单文件打包：_MEIPASS 是临时解压目录
-            # 我们需要获取 exe 所在目录，而不是临时目录
             if sys.platform == 'win32':
-                # Windows：获取 exe 文件所在目录
                 base_path = os.path.dirname(sys.executable)
             else:
-                # macOS/Linux：使用 _MEIPASS
                 base_path = sys._MEIPASS
         else:
-            # 文件夹打包或非 Windows 平台
             base_path = os.path.dirname(sys.executable)
     else:
-        # 如果是脚本运行
         base_path = os.path.dirname(os.path.abspath(__file__))
-
     return base_path
 
 
