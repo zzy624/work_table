@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from datetime import datetime
+import traceback
 
 from PyQt5.QtCore import pyqtSlot, Qt, QThread, pyqtSignal, QEvent, QDate
 from PyQt5.QtGui import QIntValidator, QColor, QFont, QBrush
@@ -417,119 +418,126 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
     # ==================== 数据生成 ====================
     @pyqtSlot()
     def on_pushButton_generate_data_clicked(self):
-        start_date = datetime.strptime(self.dateEdit.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
-        end_date = datetime.strptime(self.dateEdit_2.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
-        resource_ip_list = []
-        master_account_list = self.get_selected_master_accounts()
-        from_account_list = self.get_selected_from_accounts()
+        try:
+            start_date = datetime.strptime(self.dateEdit.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
+            end_date = datetime.strptime(self.dateEdit_2.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
+            resource_ip_list = []
+            master_account_list = self.get_selected_master_accounts()
+            from_account_list = self.get_selected_from_accounts()
 
-        if not master_account_list:
-            QMessageBox.warning(self, "警告", "请选择至少一个主账号")
-            return
-
-        if not from_account_list:
-            QMessageBox.warning(self, "警告", "请选择至少一个从账号")
-            return
-
-        date1 = self.dateEdit.date()
-        date2 = self.dateEdit_2.date()
-
-        if date1 > date2:
-            QMessageBox.warning(self, "警告", "开始时间应小于结束时间")
-            return
-
-        config_dir = os.path.join(self.application_path, 'config')
-        service_file = os.path.join(config_dir, 'service')
-
-        if os.path.exists(service_file):
-            try:
-                content = self.read_file_with_encoding(service_file)
-                resource_ip_list = []
-
-                for line in content.splitlines():
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-
-                    # 支持多种分隔符：空格、Tab、逗号、冒号、竖线、分号
-                    for sep in ['\t', ' ', ',', ':', '|', ';']:
-                        if sep in line:
-                            parts = line.split(sep)
-                            parts = [p.strip() for p in parts if p.strip()]
-                            if len(parts) >= 2:
-                                resource_ip_list.append(f"{parts[0]} {parts[1]}")
-                                break
-                    else:
-                        # 没有找到分隔符，整行作为单个项处理（IP或服务器名）
-                        if line:
-                            resource_ip_list.append(line)
-
-                if len(resource_ip_list) == 0:
-                    reply = QMessageBox.warning(self, "提示",
-                                                "服务配置信息不存在，请先配置服务器",
-                                                QMessageBox.Ok | QMessageBox.Cancel)
-                    if reply == QMessageBox.Ok:
-                        self.on_action_menu_clicked(0)
-                    return
-
-            except Exception as e:
-                QMessageBox.warning(self, "提示",
-                                    f"服务配置加载失败\n\n"
-                                    f"支持格式示例：\n"
-                                    f"• 服务器1 192.168.1.1 (空格)\n"
-                                    f"• 服务器1\t192.168.1.1 (Tab)\n"
-                                    f"• 服务器1,192.168.1.1 (逗号)\n"
-                                    f"• 服务器1:192.168.1.1 (冒号)\n"
-                                    f"错误信息: {str(e)}")
+            if not master_account_list:
+                QMessageBox.warning(self, "警告", "请选择至少一个主账号")
                 return
-        else:
-            reply = QMessageBox.warning(self, "提示",
-                                        "服务配置文件不存在，请先配置服务器",
-                                        QMessageBox.Ok | QMessageBox.Cancel)
-            if reply == QMessageBox.Ok:
-                self.on_action_menu_clicked(0)
-            return
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("请稍候")
-        dialog.setLayout(QVBoxLayout())
-        dialog.layout().addWidget(QLabel("加载中...", alignment=Qt.AlignCenter))
-        dialog.setFixedSize(140, 60)
-        dialog.setWindowModality(Qt.WindowModal)
-        dialog.show()
+            if not from_account_list:
+                QMessageBox.warning(self, "警告", "请选择至少一个从账号")
+                return
 
-        self.W.generate_timesheet_data(
-            start_date,
-            end_date,
-            resource_ip_list,
-            from_account_list,
-            master_account_list
-        )
+            date1 = self.dateEdit.date()
+            date2 = self.dateEdit_2.date()
 
-        # 获取表头
-        self.header = self.W.header
+            if date1 > date2:
+                QMessageBox.warning(self, "警告", "开始时间应小于结束时间")
+                return
 
-        # 更新列表
-        self.listWidget.clear()
-        for key, value in self.W.data_dict.items():
-            font = QFont()
-            font.setPointSize(14)
-            item = QListWidgetItem(key)
-            item.setFont(font)
-            self.listWidget.addItem(item)
+            config_dir = os.path.join(self.application_path, 'config')
+            service_file = os.path.join(config_dir, 'service')
 
-        # 设置列表宽度
-        if self.listWidget.count() > 0:
-            max_width = self.listWidget.sizeHintForColumn(0)
-            self.listWidget.setMinimumWidth(max_width + 30)
-            self.label_8.setMinimumWidth(max_width + 30)
+            if os.path.exists(service_file):
+                try:
+                    content = self.read_file_with_encoding(service_file)
+                    resource_ip_list = []
 
-        # 默认第一页数据
-        if self.W.data_dict:
-            self.listWidget.setCurrentRow(0)
-            self.set_table(self.W.data_dict[next(iter(self.W.data_dict))].values)
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
 
-        dialog.close()
+                        # 支持多种分隔符：空格、Tab、逗号、冒号、竖线、分号
+                        for sep in ['\t', ' ', ',', ':', '|', ';']:
+                            if sep in line:
+                                parts = line.split(sep)
+                                parts = [p.strip() for p in parts if p.strip()]
+                                if len(parts) >= 2:
+                                    resource_ip_list.append(f"{parts[0]} {parts[1]}")
+                                    break
+                        else:
+                            # 没有找到分隔符，整行作为单个项处理（IP或服务器名）
+                            if line:
+                                resource_ip_list.append(line)
+
+                    if len(resource_ip_list) == 0:
+                        reply = QMessageBox.warning(self, "提示",
+                                                    "服务配置信息不存在，请先配置服务器",
+                                                    QMessageBox.Ok | QMessageBox.Cancel)
+                        if reply == QMessageBox.Ok:
+                            self.on_action_menu_clicked(0)
+                        return
+
+                except Exception as e:
+                    QMessageBox.warning(self, "提示",
+                                        f"服务配置加载失败\n\n"
+                                        f"支持格式示例：\n"
+                                        f"• 服务器1 192.168.1.1 (空格)\n"
+                                        f"• 服务器1\t192.168.1.1 (Tab)\n"
+                                        f"• 服务器1,192.168.1.1 (逗号)\n"
+                                        f"• 服务器1:192.168.1.1 (冒号)\n"
+                                        f"错误信息: {str(e)}")
+                    return
+            else:
+                reply = QMessageBox.warning(self, "提示",
+                                            "服务配置文件不存在，请先配置服务器",
+                                            QMessageBox.Ok | QMessageBox.Cancel)
+                if reply == QMessageBox.Ok:
+                    self.on_action_menu_clicked(0)
+                return
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("请稍候")
+            dialog.setLayout(QVBoxLayout())
+            dialog.layout().addWidget(QLabel("加载中...", alignment=Qt.AlignCenter))
+            dialog.setFixedSize(140, 60)
+            dialog.setWindowModality(Qt.WindowModal)
+            dialog.show()
+
+            self.W.generate_timesheet_data(
+                start_date,
+                end_date,
+                resource_ip_list,
+                from_account_list,
+                master_account_list
+            )
+
+            # 获取表头
+            self.header = self.W.header
+
+            # 更新列表
+            self.listWidget.clear()
+            for key, value in self.W.data_dict.items():
+                font = QFont()
+                font.setPointSize(14)
+                item = QListWidgetItem(key)
+                item.setFont(font)
+                self.listWidget.addItem(item)
+
+            # 设置列表宽度
+            if self.listWidget.count() > 0:
+                max_width = self.listWidget.sizeHintForColumn(0)
+                self.listWidget.setMinimumWidth(max_width + 30)
+                self.label_8.setMinimumWidth(max_width + 30)
+
+            # 默认第一页数据
+            if self.W.data_dict:
+                self.listWidget.setCurrentRow(0)
+                self.set_table(self.W.data_dict[next(iter(self.W.data_dict))].values)
+
+            dialog.close()
+        except Exception as e:
+            error_detail = traceback.format_exc()
+            print(f"崩溃详情：{error_detail}")
+            QMessageBox.critical(self, "错误",
+                             f"程序发生错误：\n{str(e)}\n\n"
+                             f"{error_detail}")
 
     # ==================== 表格操作 ====================
     def set_table(self, data_list):
