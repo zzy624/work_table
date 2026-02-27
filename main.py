@@ -419,8 +419,6 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
     @pyqtSlot()
     def on_pushButton_generate_data_clicked(self):
         try:
-            start_date = datetime.strptime(self.dateEdit.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
-            end_date = datetime.strptime(self.dateEdit_2.text(), "%Y/%m/%d").strftime("%Y-%m-%d")
             resource_ip_list = []
             master_account_list = self.get_selected_master_accounts()
             from_account_list = self.get_selected_from_accounts()
@@ -435,6 +433,8 @@ class UIMainWindow(QMainWindow, Ui_MainWindow):
 
             date1 = self.dateEdit.date()
             date2 = self.dateEdit_2.date()
+            start_date = date1.toString("yyyy-MM-dd")
+            end_date = date2.toString("yyyy-MM-dd")
 
             if date1 > date2:
                 QMessageBox.warning(self, "警告", "开始时间应小于结束时间")
